@@ -37,7 +37,7 @@ def volume_render_radiance_field(
         # noise = noise.to(radiance_field)
     sigma_a = torch.nn.functional.relu(radiance_field[..., 3] + noise)
     alpha = 1.0 - torch.exp(-sigma_a * dists)
-    weights = alpha * cumprod_exclusive(1.0 - alpha + 1e-10)
+    weights = alpha * cumprod_exclusive(1.0 - alpha + 1e-10)       # This calculates T_i * alpha_i
 
     rgb_map = weights[..., None] * rgb
     rgb_map = rgb_map.sum(dim=-2)

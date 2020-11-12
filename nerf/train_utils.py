@@ -79,7 +79,7 @@ def predict_and_render_radiance(
         rgb_coarse,
         disp_coarse,
         acc_coarse,
-        weights,
+        weights_coarse,
         depth_coarse,
     ) = volume_render_radiance_field(
         radiance_field,
@@ -89,14 +89,14 @@ def predict_and_render_radiance(
         white_background=getattr(options.nerf, mode).white_background,
     )
 
-    rgb_fine, disp_fine, acc_fine = None, None, None
+    rgb_fine, disp_fine, acc_fine, weights_fine, depth_fine = None, None, None, None, None
     if getattr(options.nerf, mode).num_fine > 0:
         # rgb_map_0, disp_map_0, acc_map_0 = rgb_map, disp_map, acc_map
 
         z_vals_mid = 0.5 * (z_vals[..., 1:] + z_vals[..., :-1])
         z_samples = sample_pdf(
             z_vals_mid,
-            weights[..., 1:-1],
+            weights_coarse[..., 1:-1],
             getattr(options.nerf, mode).num_fine,
             det=(getattr(options.nerf, mode).perturb == 0.0),
         )
@@ -114,7 +114,7 @@ def predict_and_render_radiance(
             encode_position_fn,
             encode_direction_fn,
         )
-        rgb_fine, disp_fine, acc_fine, _, _ = volume_render_radiance_field(
+        rgb_fine, disp_fine, acc_fine, weights_fine, depth_fine = volume_render_radiance_field(
             radiance_field,
             z_vals,
             rd,
@@ -124,7 +124,7 @@ def predict_and_render_radiance(
             white_background=getattr(options.nerf, mode).white_background,
         )
 
-    return rgb_coarse, disp_coarse, acc_coarse, rgb_fine, disp_fine, acc_fine
+    return rgb_coarse, disp_coarse, acc_coarse, depth_coarse, rgb_fine, disp_fine, acc_fine, depth_fine
 
 
 def run_one_iter_of_nerf(
@@ -151,6 +151,7 @@ def run_one_iter_of_nerf(
         ray_directions.shape,
         ray_directions.shape[:-1],
         ray_directions.shape[:-1],
+        ray_directions.shape[:-1]
     ]
     if model_fine:
         restore_shapes += restore_shapes

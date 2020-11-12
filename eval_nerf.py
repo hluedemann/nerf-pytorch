@@ -31,8 +31,15 @@ def cast_to_image(tensor, dataset_type):
 
 
 def cast_to_disparity_image(tensor):
+    tensor[torch.isnan(tensor)] = 0.0
     img = (tensor - tensor.min()) / (tensor.max() - tensor.min())
     img = img.clamp(0, 1) * 255
+    return img.detach().cpu().numpy().astype(np.uint8)
+
+
+def cast_to_depth_image(tensor):
+    img = (tensor - tensor.min()) / (tensor.max() - tensor.min())
+    img = (1-img.clamp(0, 1)) * 255
     return img.detach().cpu().numpy().astype(np.uint8)
 
 
@@ -152,6 +159,7 @@ def main():
     os.makedirs(configargs.savedir, exist_ok=True)
     if configargs.save_disparity_image:
         os.makedirs(os.path.join(configargs.savedir, "disparity"), exist_ok=True)
+        os.makedirs(os.path.join(configargs.savedir, "depth"), exist_ok=True)
 
     # Evaluation loop
     times_per_image = []
@@ -162,7 +170,7 @@ def main():
         with torch.no_grad():
             pose = pose[:3, :4]
             ray_origins, ray_directions = get_ray_bundle(hwf[0], hwf[1], hwf[2], pose)
-            rgb_coarse, disp_coarse, _, rgb_fine, disp_fine, _ = run_one_iter_of_nerf(
+            rgb_coarse, disp_coarse, acc_coarse, depth_coarse, rgb_fine, disp_fine, acc_fine, depth_fine = run_one_iter_of_nerf(
                 hwf[0],
                 hwf[1],
                 hwf[2],
@@ -178,6 +186,8 @@ def main():
             rgb = rgb_fine if rgb_fine is not None else rgb_coarse
             if configargs.save_disparity_image:
                 disp = disp_fine if disp_fine is not None else disp_coarse
+                depth = depth_fine if depth_fine is not None else depth_coarse
+
         times_per_image.append(time.time() - start)
         if configargs.savedir:
             savefile = os.path.join(configargs.savedir, f"{i:04d}.png")
@@ -187,6 +197,10 @@ def main():
             if configargs.save_disparity_image:
                 savefile = os.path.join(configargs.savedir, "disparity", f"{i:04d}.png")
                 imageio.imwrite(savefile, cast_to_disparity_image(disp))
+
+                savefile = os.path.join(configargs.savedir, "depth", f"{i:04d}.png")
+                imageio.imwrite(savefile, cast_to_depth_image(depth))
+
         tqdm.write(f"Avg time per image: {sum(times_per_image) / (i + 1)}")
 
 

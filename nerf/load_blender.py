@@ -13,6 +13,14 @@ def translate_by_t_along_z(t):
     return tform
 
 
+def translate_along_axis(x, y, z):
+    tform = np.eye(4).astype(np.float32)
+    tform[0][3] = x
+    tform[1][3] = y
+    tform[2][3] = z
+    return tform
+
+
 def rotate_by_phi_along_x(phi):
     tform = np.eye(4).astype(np.float32)
     tform[1, 1] = tform[2, 2] = np.cos(phi)
@@ -29,8 +37,8 @@ def rotate_by_theta_along_y(theta):
     return tform
 
 
-def pose_spherical(theta, phi, radius):
-    c2w = translate_by_t_along_z(radius)
+def pose_spherical(theta, phi, x, y, z):
+    c2w = translate_along_axis(x, y, z)
     c2w = rotate_by_phi_along_x(phi / 180.0 * np.pi) @ c2w
     c2w = rotate_by_theta_along_y(theta / 180 * np.pi) @ c2w
     c2w = np.array([[-1, 0, 0, 0], [0, 0, 1, 0], [0, 1, 0, 0], [0, 0, 0, 1]]) @ c2w
@@ -77,7 +85,7 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False):
 
     render_poses = torch.stack(
         [
-            torch.from_numpy(pose_spherical(angle, -30.0, 4.0))
+            torch.from_numpy(pose_spherical(angle, -30.0, 0.0, 0.0, 4.0))
             for angle in np.linspace(-180, 180, 40 + 1)[:-1]
         ],
         0,
@@ -114,3 +122,11 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False):
     poses = torch.from_numpy(poses)
 
     return imgs, poses, render_poses, [H, W, focal], i_split
+
+
+
+
+if __name__ == "__main__":
+
+    pose = pose_spherical(-45, -45, 0, 0, 3)
+    print(pose @ np.array([1.0, 0.0, 0.0, 1.0]))
