@@ -45,7 +45,7 @@ def pose_spherical(theta, phi, x, y, z):
     return c2w
 
 
-def load_blender_data(basedir, half_res=False, testskip=1, debug=False):
+def load_blender_data(basedir, half_res=False, testskip=1, debug=False, render_trans=None):
     splits = ["train", "val", "test"]
     metas = {}
     for s in splits:
@@ -83,9 +83,15 @@ def load_blender_data(basedir, half_res=False, testskip=1, debug=False):
     camera_angle_x = float(meta["camera_angle_x"])
     focal = 0.5 * W / np.tan(0.5 * camera_angle_x)
 
+    x_trans, y_trans, z_trans = 0.0, 0.0, 4.0
+    if render_trans is not None:
+        x_trans = render_trans.x
+        y_trans = render_trans.y
+        z_trans = render_trans.z
+
     render_poses = torch.stack(
         [
-            torch.from_numpy(pose_spherical(angle, -30.0, 0.0, 0.0, 4.0))
+            torch.from_numpy(pose_spherical(angle, -30.0, x_trans, y_trans, 4.0))
             for angle in np.linspace(-180, 180, 40 + 1)[:-1]
         ],
         0,

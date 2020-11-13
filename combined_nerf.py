@@ -30,44 +30,7 @@ def cast_to_image(tensor, dataset_type):
     # return np.moveaxis(img, [-1], [0])
 
 
-def cast_to_disparity_image(tensor):
-    tensor[torch.isnan(tensor)] = 0.0
-    img = (tensor - tensor.min()) / (tensor.max() - tensor.min())
-    img = img.clamp(0, 1) * 255
-    return img.detach().cpu().numpy().astype(np.uint8)
-
-
-def cast_to_depth_image(tensor):
-    img = (tensor - tensor.min()) / (tensor.max() - tensor.min())
-    img = (1-img.clamp(0, 1)) * 255
-    return img.detach().cpu().numpy().astype(np.uint8)
-
-
-def main():
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--config", type=str, required=True, help="Path to (.yml) config file."
-    )
-    parser.add_argument(
-        "--checkpoint",
-        type=str,
-        required=True,
-        help="Checkpoint / pre-trained model to evaluate.",
-    )
-    parser.add_argument(
-        "--savedir", type=str, help="Save images to this directory, if specified."
-    )
-    parser.add_argument(
-        "--save-disparity-image", action="store_true", help="Save disparity images too."
-    )
-    configargs = parser.parse_args()
-
-    # Read config file.
-    cfg = None
-    with open(configargs.config, "r") as f:
-        cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
-        cfg = CfgNode(cfg_dict)
+def run_nerf(cfg, checkpoint, configargs):
 
     images, poses, render_poses, hwf = None, None, None, None
     i_train, i_val, i_test = None, None, None
@@ -133,7 +96,7 @@ def main():
         )
         model_fine.to(device)
 
-    checkpoint = torch.load(configargs.checkpoint)
+    checkpoint = torch.load(checkpoint)
     model_coarse.load_state_dict(checkpoint["model_coarse_state_dict"])
     if checkpoint["model_fine_state_dict"]:
         try:
@@ -156,14 +119,11 @@ def main():
 
     render_poses = render_poses.float().to(device)
 
-    # Create directory to save images to.
-    os.makedirs(configargs.savedir, exist_ok=True)
-    if configargs.save_disparity_image:
-        os.makedirs(os.path.join(configargs.savedir, "disparity"), exist_ok=True)
-        os.makedirs(os.path.join(configargs.savedir, "depth"), exist_ok=True)
-
     # Evaluation loop
     times_per_image = []
+    rgb_images = []
+    depth_images = []
+    disp_images = []
     for i, pose in enumerate(tqdm(render_poses)):
         start = time.time()
         rgb = None, None
@@ -185,24 +145,81 @@ def main():
                 encode_direction_fn=encode_direction_fn,
             )
             rgb = rgb_fine if rgb_fine is not None else rgb_coarse
-            if configargs.save_disparity_image:
-                disp = disp_fine if disp_fine is not None else disp_coarse
-                depth = depth_fine if depth_fine is not None else depth_coarse
+            disp = disp_fine if disp_fine is not None else disp_coarse
+            depth = depth_fine if depth_fine is not None else depth_coarse
 
         times_per_image.append(time.time() - start)
+
+        rgb_images.append(rgb)
+        depth_images.append(depth)
+        disp_images.append(disp)
+        tqdm.write(f"Avg time per image: {sum(times_per_image) / (i + 1)}")
+
+    return rgb_images, depth_images, disp_images
+
+
+def combine_images(rgb1, depth1, disp1, rgb2, depth2, disp2, configargs):
+
+    os.makedirs(configargs.savedir, exist_ok=True)
+
+    for i in range(len(rgb1)):
+
+        disp1[i][torch.isnan(disp1[i])] = 0.0
+        disp2[i][torch.isnan(disp2[i])] = 0.0
+        idxs = disp1[i] >= disp2[i]
+
+        rgb = torch.where(idxs[..., None].expand(rgb1[i].shape), rgb1[i], rgb2[i])
         if configargs.savedir:
             savefile = os.path.join(configargs.savedir, f"{i:04d}.png")
             imageio.imwrite(
-                savefile, cast_to_image(rgb[..., :3], cfg.dataset.type.lower())
+                savefile, cast_to_image(rgb[..., :3], "blender")
             )
-            if configargs.save_disparity_image:
-                savefile = os.path.join(configargs.savedir, "disparity", f"{i:04d}.png")
-                imageio.imwrite(savefile, cast_to_disparity_image(disp))
 
-                savefile = os.path.join(configargs.savedir, "depth", f"{i:04d}.png")
-                imageio.imwrite(savefile, cast_to_depth_image(depth))
 
-        tqdm.write(f"Avg time per image: {sum(times_per_image) / (i + 1)}")
+def main():
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--config1", type=str, required=True, help="Path to (.yml) config file."
+    )
+    parser.add_argument(
+        "--config2", type=str, required=True, help="Path to (.yml) config file."
+    )
+    parser.add_argument(
+        "--checkpoint1",
+        type=str,
+        required=True,
+        help="Checkpoint / first pre-trained model to evaluate.",
+    )
+    parser.add_argument(
+        "--checkpoint2",
+        type=str,
+        required=True,
+        help="Checkpoint / second pre-trained model to evaluate.",
+    )
+    parser.add_argument(
+        "--savedir", type=str, help="Save images to this directory, if specified."
+    )
+    parser.add_argument(
+        "--save-disparity-image", action="store_true", help="Save disparity images too."
+    )
+    configargs = parser.parse_args()
+
+    # Read config file.
+    cfg1, cfg2 = None, None
+    with open(configargs.config1, "r") as f:
+        cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
+        cfg1 = CfgNode(cfg_dict)
+
+    with open(configargs.config2, "r") as f:
+        cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
+        cfg2 = CfgNode(cfg_dict)
+
+
+    rgb1, depth1, disp1 = run_nerf(cfg1, configargs.checkpoint1, configargs)
+    rgb2, depth2, disp2 = run_nerf(cfg2, configargs.checkpoint2, configargs)
+
+    combine_images(rgb1, depth1, disp1, rgb2, depth2, disp2, configargs)
 
 
 if __name__ == "__main__":
