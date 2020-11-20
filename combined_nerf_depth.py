@@ -215,7 +215,6 @@ def main():
         cfg_dict = yaml.load(f, Loader=yaml.FullLoader)
         cfg2 = CfgNode(cfg_dict)
 
-
     rgb1, depth1, disp1 = run_nerf(cfg1, configargs.checkpoint1, configargs)
     rgb2, depth2, disp2 = run_nerf(cfg2, configargs.checkpoint2, configargs)
 
